@@ -1,0 +1,6 @@
+[theme]
+primaryColor = "#009A44"         # CGIAR Green
+backgroundColor = "#001F1F"      # Very dark green, almost black
+secondaryBackgroundColor = "#333333"  # Dark gray for contrast
+textColor = "#E0E0E0"            # Light gray text for readability
+font = "sans serif"
