@@ -19,7 +19,7 @@ def load_model():
 model = load_model()
 
 # Set OpenAI API key
-openai.api_key = st.secrets["OPENAI"]["API_KEY"]
+openai.api_key = os.environ.get("OPENAI_API_KEY")
 
 # Add a logo and title side by side
 col_image, col_title = st.columns([1, 2])  # Adjust the ratio as needed
@@ -258,7 +258,7 @@ Guidelines:
 """
 
         # Initialize LLM
-        openai_api_key = st.secrets["OPENAI"]["API_KEY"]
+        openai_api_key = os.environ.get("OPENAI_API_KEY")
         if not openai_api_key:
             st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
         else:
