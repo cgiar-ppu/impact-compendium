@@ -77,7 +77,7 @@ if "filtered_df" not in st.session_state:
 if "summary" not in st.session_state:
     st.session_state.summary = None
 if "similarity_threshold" not in st.session_state:
-    st.session_state.similarity_threshold = 0.5  # Default value
+    st.session_state.similarity_threshold = 0.35  # Default value
 
 # Function to get available options based on current selections
 def get_filtered_options(df, selected_countries, selected_crops):
@@ -142,9 +142,9 @@ st.session_state.filtered_df = filtered_df
 # Similarity Threshold Slider
 similarity_threshold = st.slider(
     "Search Similarity Threshold",
-    min_value=-1.0,
+    min_value=0.0,
     max_value=1.0,
-    value=st.session_state.get("similarity_threshold", 0.5),
+    value=st.session_state.get("similarity_threshold", 0.35),
     step=0.01
 )
 
@@ -196,6 +196,13 @@ if search_clicked:
     # Sort DataFrame by similarity scores
     result_df = result_df.sort_values(by='Similarity', ascending=False)
 
+    # Rearrange columns so that 'Title' is in the 2nd position
+    columns = result_df.columns.tolist()
+    if 'Title' in columns:
+        columns.remove('Title')
+        columns.insert(1, 'Title')
+        result_df = result_df[columns]
+
     # Store the result_df in session state
     st.session_state.search_results = result_df
 
@@ -213,6 +220,12 @@ elif st.session_state.get('search_performed', False) and st.session_state.get('s
     if result_df.empty:
         st.write("No results found matching your query. Consider using a different search term or lowering the similarity threshold.")
     else:
+        # Rearrange columns so that 'Title' is in the 2nd position
+        columns = result_df.columns.tolist()
+        if 'Title' in columns:
+            columns.remove('Title')
+            columns.insert(1, 'Title')
+            result_df = result_df[columns]
         st.header("Search Results")
         st.write(result_df)
 
@@ -250,10 +263,10 @@ Guidelines:
             st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
         else:
             try:
-                llm = ChatOpenAI(api_key=openai_api_key, model_name='gpt-4')
+                llm = ChatOpenAI(api_key=openai_api_key, model_name='gpt-4o')
                 # Prepare prompts
                 all_titles = "\n".join(titles)
-                user_prompt = f"Please provide a one-paragraph summary of the following titles:\n{all_titles}"
+                user_prompt = f"Please provide a summary using a minimum of 1 paragraph and a maximum of 3 paragraphs, without mentioning the specific number of texts or details, since it needs to be a summary of all of the activities as a whole showcasing the impact generated in a narrative, worded in a way that describes the work performed and achievements of the text of the following titles:\n{all_titles}"
                 system_message = SystemMessagePromptTemplate.from_template(system_prompt)
                 human_message = HumanMessagePromptTemplate.from_template("{user_prompt}")
                 chat_prompt = ChatPromptTemplate.from_messages([system_message, human_message])
