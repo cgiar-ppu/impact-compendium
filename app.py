@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from sentence_transformers import SentenceTransformer, util
-import openai  # Import OpenAI module
+import openai
 import os
 from langchain.chat_models import ChatOpenAI
 from langchain.prompts import (
@@ -10,6 +10,8 @@ from langchain.prompts import (
     HumanMessagePromptTemplate,
 )
 from langchain.chains import LLMChain
+import plotly.express as px
+import streamlit.components.v1 as components
 
 # Load the model
 @st.cache_resource
@@ -43,7 +45,6 @@ with col_title:
     )
     st.markdown('<div class="centered-title"><h1>IMPACT COMPENDIUM SEARCH</h1></div>', unsafe_allow_html=True)
 
-# Read the Excel file
 @st.cache_data
 def load_data():
     try:
@@ -67,7 +68,6 @@ if "search_performed" not in st.session_state:
     st.session_state.search_performed = False
 if "search_results" not in st.session_state:
     st.session_state.search_results = None
-# Initialize variables to store embeddings and cosine scores
 if "cosine_scores" not in st.session_state:
     st.session_state.cosine_scores = None
 if "titles" not in st.session_state:
@@ -77,36 +77,27 @@ if "filtered_df" not in st.session_state:
 if "summary" not in st.session_state:
     st.session_state.summary = None
 if "similarity_threshold" not in st.session_state:
-    st.session_state.similarity_threshold = 0.35  # Default value
+    st.session_state.similarity_threshold = 0.35
 
-# Function to get available options based on current selections
 def get_filtered_options(df, selected_countries, selected_crops):
     temp_df = df.copy()
-
-    # Apply crop filter to get available countries
     if selected_crops and "All crop/stock types" not in selected_crops:
         temp_df = temp_df[temp_df["Crop/stock type"].isin(selected_crops)]
     country_options = ["All countries"] + sorted(temp_df["Country"].dropna().unique())
 
-    # Reset temp_df to original df
     temp_df = df.copy()
-
-    # Apply country filter to get available crops
     if selected_countries and "All countries" not in selected_countries:
         temp_df = temp_df[temp_df["Country"].isin(selected_countries)]
     crop_options = ["All crop/stock types"] + sorted(temp_df["Crop/stock type"].dropna().unique())
 
     return country_options, crop_options
 
-# Get available options based on current selections
 country_options, crop_options = get_filtered_options(
     df, st.session_state.selected_countries, st.session_state.selected_crops
 )
 
-# Search Bar
 search_term = st.text_input("Search Term", placeholder="Used for semantic similarity search...")
 
-# Dropdown menus for filters
 col1, col2 = st.columns(2)
 with col1:
     selected_countries = st.multiselect(
@@ -123,11 +114,9 @@ with col2:
         key="crops_filter",
     )
 
-# Update session state
 st.session_state.selected_countries = selected_countries
 st.session_state.selected_crops = selected_crops
 
-# Filter the DataFrame based on selections
 filtered_df = df.copy()
 
 if selected_countries and "All countries" not in selected_countries:
@@ -136,10 +125,8 @@ if selected_countries and "All countries" not in selected_countries:
 if selected_crops and "All crop/stock types" not in selected_crops:
     filtered_df = filtered_df[filtered_df["Crop/stock type"].isin(selected_crops)]
 
-# Save filtered_df in session state
 st.session_state.filtered_df = filtered_df
 
-# Similarity Threshold Slider
 similarity_threshold = st.slider(
     "Search Similarity Threshold",
     min_value=0.0,
@@ -148,79 +135,180 @@ similarity_threshold = st.slider(
     step=0.01
 )
 
-# Define the disabled state for the Search button
 search_button_disabled = not search_term
-
-# Create two columns for the buttons
 col_search, col_summarize = st.columns(2)
-
 with col_search:
-    # Search Button
     search_clicked = st.button("Search", disabled=search_button_disabled)
 
-# Search Functionality
 if search_clicked:
-    # Store the similarity threshold at the time of search
     st.session_state.similarity_threshold = similarity_threshold
 
-    # Perform semantic similarity search
-    # Encode the search term and the titles
     search_embedding = model.encode(search_term, convert_to_tensor=True)
     titles = st.session_state.filtered_df['Title'].fillna('').tolist()
     title_embeddings = model.encode(titles, convert_to_tensor=True)
-
-    # Compute cosine similarities
     cosine_scores = util.cos_sim(search_embedding, title_embeddings)[0].cpu().numpy()
 
-    # Store embeddings and scores in session state
     st.session_state['cosine_scores'] = cosine_scores
     st.session_state['titles'] = titles
-
-    # Update search_performed flag
     st.session_state.search_performed = True
-
-    # Clear any existing summary
     st.session_state.summary = None
 
-    # Filter and display results based on the stored similarity threshold
     cosine_scores = st.session_state['cosine_scores']
     titles = st.session_state['titles']
     filtered_df = st.session_state.filtered_df.copy()
-
-    # Attach scores to the DataFrame
     filtered_df['Similarity'] = cosine_scores
-
-    # Filter DataFrame by similarity threshold stored in session_state
     result_df = filtered_df[filtered_df['Similarity'] >= st.session_state.similarity_threshold]
-
-    # Sort DataFrame by similarity scores
     result_df = result_df.sort_values(by='Similarity', ascending=False)
 
-    # Rearrange columns so that 'Title' is in the 2nd position
     columns = result_df.columns.tolist()
     if 'Title' in columns:
         columns.remove('Title')
         columns.insert(1, 'Title')
         result_df = result_df[columns]
 
-    # Store the result_df in session state
     st.session_state.search_results = result_df
 
-    # Display the results
     if result_df.empty:
         st.write("No results found matching your query. Consider using a different search term or lowering the similarity threshold.")
     else:
         st.header("Search Results")
         st.write(result_df)
 
-# Now, if search has been performed, display the stored results
+        countries = result_df['Country'].dropna().unique().tolist()
+        if countries:
+            map_df = pd.DataFrame({'country': countries, 'value': 1})
+            fig = px.choropleth(
+                map_df,
+                locations='country',
+                locationmode='country names',
+                color='value',
+                color_continuous_scale='Blues',
+                title='Countries Present in Results'
+            )
+            st.plotly_chart(fig)
+
+        # Build a carousel with HTML/CSS/JS
+        # Extract values for the carousel
+        items = []
+        for i, row in result_df.iterrows():
+            title_val = row.get("Title", "N/A")
+            nrm_val = row.get("Natural resource management", "N/A")
+            author_val = row.get("Author, date", "N/A")
+            item_html = f"""
+            <div class="carousel-item">
+                <h3>{title_val}</h3>
+                <p><strong>Natural resource management:</strong> {nrm_val}</p>
+                <p><strong>Author, date:</strong> {author_val}</p>
+            </div>
+            """
+            items.append(item_html)
+
+        items_html = "\n".join(items)
+        total_items = len(items)
+
+        # IMPORTANT: Do not use f-string here, just a normal triple-quoted string
+        # to avoid Python interpreting JavaScript template literals.
+        carousel_html = """
+        <style>
+        .carousel-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
+            overflow: hidden;
+            background: #f9f9f9;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        .carousel-wrapper {
+            display: flex;
+            transition: transform 0.5s ease;
+        }
+        .carousel-item {
+            min-width: 100%;
+            box-sizing: border-box;
+            padding: 20px;
+        }
+        .carousel-controls {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 10px;
+        }
+        .carousel-controls button {
+            background: #007bff;
+            border: none;
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .carousel-controls button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
+        .carousel-indicator {
+            text-align: center;
+            margin-top: 10px;
+            font-weight: bold;
+        }
+        </style>
+
+        <div class="carousel-container">
+            <div class="carousel-wrapper" id="carousel-wrapper">
+                <!--ITEMS_PLACEHOLDER-->
+            </div>
+            <div class="carousel-controls">
+                <button id="prev-btn">Previous</button>
+                <button id="next-btn">Next</button>
+            </div>
+            <div class="carousel-indicator" id="carousel-indicator">1 of TOTAL_PLACEHOLDER</div>
+        </div>
+
+        <script>
+        const wrapper = document.getElementById('carousel-wrapper');
+        const prevBtn = document.getElementById('prev-btn');
+        const nextBtn = document.getElementById('next-btn');
+        const indicator = document.getElementById('carousel-indicator');
+        
+        let currentIndex = 0;
+        const total = TOTAL_PLACEHOLDER;
+
+        function updateCarousel() {
+            wrapper.style.transform = "translateX(-" + (currentIndex * 100) + "%)";
+            indicator.textContent = (currentIndex + 1) + " of " + total;
+            prevBtn.disabled = currentIndex === 0;
+            nextBtn.disabled = currentIndex === total - 1;
+        }
+
+        prevBtn.addEventListener('click', () => {
+            if (currentIndex > 0) {
+                currentIndex--;
+                updateCarousel();
+            }
+        });
+
+        nextBtn.addEventListener('click', () => {
+            if (currentIndex < total - 1) {
+                currentIndex++;
+                updateCarousel();
+            }
+        });
+
+        updateCarousel();
+        </script>
+        """
+
+        # Replace placeholders with actual HTML and counts
+        carousel_html = carousel_html.replace("<!--ITEMS_PLACEHOLDER-->", items_html)
+        carousel_html = carousel_html.replace("TOTAL_PLACEHOLDER", str(total_items))
+
+        components.html(carousel_html, height=400, scrolling=False)
+
 elif st.session_state.get('search_performed', False) and st.session_state.get('search_results') is not None:
     result_df = st.session_state.search_results
-
     if result_df.empty:
         st.write("No results found matching your query. Consider using a different search term or lowering the similarity threshold.")
     else:
-        # Rearrange columns so that 'Title' is in the 2nd position
         columns = result_df.columns.tolist()
         if 'Title' in columns:
             columns.remove('Title')
@@ -229,24 +317,146 @@ elif st.session_state.get('search_performed', False) and st.session_state.get('s
         st.header("Search Results")
         st.write(result_df)
 
-# Now, calculate the disabled state for the Summarize button
+        countries = result_df['Country'].dropna().unique().tolist()
+        if countries:
+            map_df = pd.DataFrame({'country': countries, 'value': 1})
+            fig = px.choropleth(
+                map_df,
+                locations='country',
+                locationmode='country names',
+                color='value',
+                color_continuous_scale='Blues',
+                title='Countries Present in Results'
+            )
+            st.plotly_chart(fig)
+
+        # Rebuild the carousel similarly
+        items = []
+        for i, row in result_df.iterrows():
+            title_val = row.get("Title", "N/A")
+            nrm_val = row.get("Natural resource management", "N/A")
+            author_val = row.get("Author, date", "N/A")
+            item_html = f"""
+            <div class="carousel-item">
+                <h3>{title_val}</h3>
+                <p><strong>Natural resource management:</strong> {nrm_val}</p>
+                <p><strong>Author, date:</strong> {author_val}</p>
+            </div>
+            """
+            items.append(item_html)
+
+        items_html = "\n".join(items)
+        total_items = len(items)
+
+        carousel_html = """
+        <style>
+        .carousel-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
+            overflow: hidden;
+            background: #f9f9f9;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        .carousel-wrapper {
+            display: flex;
+            transition: transform 0.5s ease;
+        }
+        .carousel-item {
+            min-width: 100%;
+            box-sizing: border-box;
+            padding: 20px;
+        }
+        .carousel-controls {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 10px;
+        }
+        .carousel-controls button {
+            background: #007bff;
+            border: none;
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .carousel-controls button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
+        .carousel-indicator {
+            text-align: center;
+            margin-top: 10px;
+            font-weight: bold;
+        }
+        </style>
+
+        <div class="carousel-container">
+            <div class="carousel-wrapper" id="carousel-wrapper">
+                <!--ITEMS_PLACEHOLDER-->
+            </div>
+            <div class="carousel-controls">
+                <button id="prev-btn">Previous</button>
+                <button id="next-btn">Next</button>
+            </div>
+            <div class="carousel-indicator" id="carousel-indicator">1 of TOTAL_PLACEHOLDER</div>
+        </div>
+
+        <script>
+        const wrapper = document.getElementById('carousel-wrapper');
+        const prevBtn = document.getElementById('prev-btn');
+        const nextBtn = document.getElementById('next-btn');
+        const indicator = document.getElementById('carousel-indicator');
+        
+        let currentIndex = 0;
+        const total = TOTAL_PLACEHOLDER;
+
+        function updateCarousel() {
+            wrapper.style.transform = "translateX(-" + (currentIndex * 100) + "%)";
+            indicator.textContent = (currentIndex + 1) + " of " + total;
+            prevBtn.disabled = currentIndex === 0;
+            nextBtn.disabled = currentIndex === total - 1;
+        }
+
+        prevBtn.addEventListener('click', () => {
+            if (currentIndex > 0) {
+                currentIndex--;
+                updateCarousel();
+            }
+        });
+
+        nextBtn.addEventListener('click', () => {
+            if (currentIndex < total - 1) {
+                currentIndex++;
+                updateCarousel();
+            }
+        });
+
+        updateCarousel();
+        </script>
+        """
+
+        carousel_html = carousel_html.replace("<!--ITEMS_PLACEHOLDER-->", items_html)
+        carousel_html = carousel_html.replace("TOTAL_PLACEHOLDER", str(total_items))
+
+        components.html(carousel_html, height=400, scrolling=False)
+
 summarize_button_disabled = True
 if st.session_state.get('search_performed', False) and st.session_state.get('search_results') is not None:
     if not st.session_state.search_results.empty:
         summarize_button_disabled = False
 
 with col_summarize:
-    # Summarize Button
     summarize_clicked = st.button("Summarize", disabled=summarize_button_disabled)
 
-# Summarization Functionality
 if summarize_clicked:
     result_df = st.session_state.search_results
     titles = result_df['Title'].tolist()
     if len(titles) == 0:
         st.write("No titles available to summarize. Please perform a search that returns results.")
     else:
-        # Define system prompt
         system_prompt = """
 You are an expert summarizer skilled in creating concise and relevant summaries of given titles. Your goal is to produce summaries that align with the specific objectives provided.
 
@@ -257,14 +467,12 @@ Guidelines:
 4. **Conciseness**: Include only the most relevant information.
 """
 
-        # Initialize LLM
         openai_api_key = os.environ.get("OPENAI_API_KEY")
         if not openai_api_key:
             st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
         else:
             try:
                 llm = ChatOpenAI(api_key=openai_api_key, model_name='gpt-4o')
-                # Prepare prompts
                 all_titles = "\n".join(titles)
                 user_prompt = f"Please provide a summary using a minimum of 1 paragraph and a maximum of 3 paragraphs, without mentioning the specific number of texts or details, since it needs to be a summary of all of the activities as a whole showcasing the impact generated in a narrative, worded in a way that describes the work performed and achievements of the text of the following titles:\n{all_titles}"
                 system_message = SystemMessagePromptTemplate.from_template(system_prompt)
@@ -275,11 +483,9 @@ Guidelines:
                 summary = response.strip()
                 st.header("Summarization Results")
                 st.write(summary)
-                # Store the summary in session state
                 st.session_state.summary = summary
             except Exception as e:
                 st.write(f"An error occurred: {e}")
 elif st.session_state.get('summary') is not None:
-    # If the summary exists in session state, display it
     st.header("Summarization Results")
     st.write(st.session_state.summary)
