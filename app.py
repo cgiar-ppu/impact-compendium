@@ -12,6 +12,7 @@ from langchain.prompts import (
 from langchain.chains import LLMChain
 import plotly.express as px
 import streamlit.components.v1 as components
+import json
 
 # Load the model
 @st.cache_resource
@@ -58,6 +59,15 @@ def load_data():
     return df
 
 df = load_data()
+
+# Load geojson (for map visualization)
+@st.cache_data
+def load_geojson():
+    with open("geojson.json") as f:
+        geojson = json.load(f)
+    return geojson
+
+geojson = load_geojson()
 
 # Initialize session state variables
 if "selected_countries" not in st.session_state:
@@ -177,18 +187,24 @@ if search_clicked:
         countries = result_df['Country'].dropna().unique().tolist()
         if countries:
             map_df = pd.DataFrame({'country': countries, 'value': 1})
-            fig = px.choropleth(
+            # Updated map visualization using choropleth_mapbox
+            fig = px.choropleth_mapbox(
                 map_df,
+                geojson=geojson,
                 locations='country',
-                locationmode='country names',
+                featureidkey='properties.name',
                 color='value',
                 color_continuous_scale='Blues',
+                mapbox_style='carto-positron',
+                zoom=1,
+                center={"lat": 20, "lon": 0},
+                opacity=0.5,
+                height=600,  # Increase the height similar to the nice looking app
                 title='Countries Present in Results'
             )
-            st.plotly_chart(fig)
+            st.plotly_chart(fig, use_container_width=True)
 
         # Build a carousel with HTML/CSS/JS
-        # Extract values for the carousel
         items = []
         for i, row in result_df.iterrows():
             title_val = row.get("Title", "N/A")
@@ -206,8 +222,6 @@ if search_clicked:
         items_html = "\n".join(items)
         total_items = len(items)
 
-        # IMPORTANT: Do not use f-string here, just a normal triple-quoted string
-        # to avoid Python interpreting JavaScript template literals.
         carousel_html = """
         <style>
         .carousel-container {
@@ -298,7 +312,6 @@ if search_clicked:
         </script>
         """
 
-        # Replace placeholders with actual HTML and counts
         carousel_html = carousel_html.replace("<!--ITEMS_PLACEHOLDER-->", items_html)
         carousel_html = carousel_html.replace("TOTAL_PLACEHOLDER", str(total_items))
 
@@ -320,15 +333,22 @@ elif st.session_state.get('search_performed', False) and st.session_state.get('s
         countries = result_df['Country'].dropna().unique().tolist()
         if countries:
             map_df = pd.DataFrame({'country': countries, 'value': 1})
-            fig = px.choropleth(
+            # Updated map visualization using choropleth_mapbox
+            fig = px.choropleth_mapbox(
                 map_df,
+                geojson=geojson,
                 locations='country',
-                locationmode='country names',
+                featureidkey='properties.name',
                 color='value',
                 color_continuous_scale='Blues',
+                mapbox_style='carto-positron',
+                zoom=1,
+                center={"lat": 20, "lon": 0},
+                opacity=0.5,
+                height=600,
                 title='Countries Present in Results'
             )
-            st.plotly_chart(fig)
+            st.plotly_chart(fig, use_container_width=True)
 
         # Rebuild the carousel similarly
         items = []
